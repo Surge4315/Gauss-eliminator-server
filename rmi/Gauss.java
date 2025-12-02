@@ -5,4 +5,6 @@ public interface Gauss extends Remote {
     String sayHello(String name) throws RemoteException;
 
     double[][] gaussianElimination(double[][] matrix) throws RemoteException;
+
+    double[][] gaussianEliminationProcess(double[][] matrix) throws RemoteException;
 }

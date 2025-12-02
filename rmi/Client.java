@@ -13,14 +13,15 @@ public class Client {
             Scanner scanner = new Scanner(System.in);
             char option;
 
+            System.out.println("1. 10");
+            System.out.println("2. 100");
+            System.out.println("3. 1000");
+            System.out.println("4. 10000");
+            System.out.println("5. test obliczen");
+            System.out.println("q. quit");
+            System.out.print("Wybierz opcję: ");
+
             while (true) {
-                System.out.println("1. 10");
-                System.out.println("2. 100");
-                System.out.println("3. 1000");
-                System.out.println("4. 10000");
-                System.out.println("5. test obliczen");
-                System.out.println("q. quit");
-                System.out.print("Wybierz opcję: ");
 
                 String input = scanner.nextLine();
                 if (input.isEmpty()) continue;
@@ -52,7 +53,7 @@ public class Client {
                         };
 
                         System.out.println("Wyniki dla testowej macierzy:");
-                        double[][] solution = gauss.gaussianElimination(testMatrix);
+                        double[][] solution = gauss.gaussianEliminationProcess(testMatrix);
                         MatrixUtils.printGaussSolutions(solution);
                         break;
                     case 'q':
@@ -71,6 +72,7 @@ public class Client {
                     );
 
                     double[][] result = gauss.gaussianElimination(matrix);
+                    double[][] resultp = gauss.gaussianEliminationProcess(matrix);
                     System.out.println("zwrócono macierz");
                     size = 0;
                 }
