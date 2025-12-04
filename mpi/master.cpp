@@ -20,6 +20,7 @@ void backSub(const vector<vector<double>> &mat)
     cout << "\nRozwiązanie układu:\n";
     for (int i = 0; i < N; i++)
         cout << "x" << i + 1 << " = " << x[i] << endl;
+    cout << endl;
 }
 
 int main(int argc, char **argv)
@@ -31,17 +32,46 @@ int main(int argc, char **argv)
 
     if (rank == 0)
     {
-        int num_workers = 1;
-
-        // Macierz do przetworzenia
-        std::vector<std::vector<double>> testMatrix = {
-            {1, -2, 3, -7},
-            {3, 1, 4, 5},
-            {2, 5, 1, 18}};
-
+        int num_workers = 1; // this is just to send data to worker that does all the process work so 1 is more than enough
         MPI_Info info;
         MPI_Info_create(&info);
 
+        cout << "1. 10\n2. 100\n3. 1000\n4. 10000\n5. test\nq. quit\n";
+        char choice;
+        vector<vector<double>> testMatrix;
+        int test=0;
+        while(true)
+        {
+            cin >> choice;
+            switch (choice)
+            {
+            case '1':
+                testMatrix = createAugmentedMatrix(generateDiagonallyDominantMatrix(10), generateVectorB(10));
+                break;
+            case '2':
+                testMatrix = createAugmentedMatrix(generateDiagonallyDominantMatrix(100), generateVectorB(100));
+                break;
+            case '3':
+                testMatrix = createAugmentedMatrix(generateDiagonallyDominantMatrix(1000), generateVectorB(1000));
+                break;
+            case '4':
+                testMatrix = createAugmentedMatrix(generateDiagonallyDominantMatrix(10000), generateVectorB(10000));
+                break;
+            case '5':
+                testMatrix = {
+                    {1, -2, 3, -7},
+                    {3, 1, 4, 5},
+                    {2, 5, 1, 18}};
+                test=1;
+                break;
+            case 'q':
+                MPI_Finalize();
+                return 0;
+            default:
+                cout << "Invalid choice. Please try again.\n";
+                continue;
+            }
+        
         MPI_Comm workers_comm;
         MPI_Comm_spawn("./worker_gauss", MPI_ARGV_NULL, num_workers,
                        info, 0, MPI_COMM_WORLD, &workers_comm, MPI_ERRCODES_IGNORE);
@@ -59,8 +89,6 @@ int main(int argc, char **argv)
         {
             MPI_Send(testMatrix[i].data(), cols, MPI_DOUBLE, 0, 0, workers_comm);
         }
-
-        cout << endl;
         // Odbieranie wyniku od workera
         std::vector<std::vector<double>> result(rows);
         for (int i = 0; i < rows; i++)
@@ -70,7 +98,7 @@ int main(int argc, char **argv)
         }
         usleep(1000); // for synchronization
         // Wyświetlanie wyniku
-        backSub(result);
+        if(test) backSub(result);
 
         usleep(1000); // for synchronization
 
@@ -97,11 +125,16 @@ int main(int argc, char **argv)
         }
         usleep(1000); // for synchronization
         // Wyświetlanie wyniku drugiego workera
-        backSub(result2);
-
-        MPI_Info_free(&info);
+        if(test){
+            backSub(result2);
+            test=0;
+        }
     }
 
-    MPI_Finalize();
-    return 0;
+        MPI_Info_free(&info);
+    
+}
+
+MPI_Finalize();
+return 0;
 }

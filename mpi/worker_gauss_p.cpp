@@ -1,7 +1,7 @@
 #include <mpi.h>
 #include <iostream>
 #include <vector>
-#include "gauss.h"
+#include "gauss_process.h"
 
 int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
@@ -19,12 +19,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Inicjalizuj workerów dla tego workera
+    initializeWorkers();
+
     // Odbieranie wymiarów macierzy
     int rows, cols;
     MPI_Recv(&rows, 1, MPI_INT, 0, 0, parent, MPI_STATUS_IGNORE);
     MPI_Recv(&cols, 1, MPI_INT, 0, 0, parent, MPI_STATUS_IGNORE);
     
-    std::cout << "Worker procesowy otrzymał macierz " << rows << "x" << cols << std::endl;
+    std::cout << "\nWorker procesowy otrzymał macierz " << rows << "x" << cols << std::endl;
     
     // Odbieranie całej macierzy
     std::vector<std::vector<double>> matrix(rows, std::vector<double>(cols));
@@ -32,12 +35,15 @@ int main(int argc, char** argv) {
         MPI_Recv(matrix[i].data(), cols, MPI_DOUBLE, 0, 0, parent, MPI_STATUS_IGNORE);
     }
 
-    matrix = gaussianElimination(matrix);
+    matrix = gaussianElimination_p(matrix);
 
     // Wysyłanie wyniku z powrotem
     for(int i = 0; i < rows; i++) {
         MPI_Send(matrix[i].data(), cols, MPI_DOUBLE, 0, 0, parent);
     }
+
+    // Zakończ workerów przed zamknięciem
+    terminateWorkers();
 
     MPI_Finalize();
     return 0;
