@@ -5,7 +5,7 @@ import java.net.*;
 
 public class GaussImpl extends UnicastRemoteObject implements Gauss {
 
-    private static final int NUM_PROCS = 4;
+    private static final int NUM_PROCS = 1;
     private static final int BASE_PORT = 5000;
 
     public GaussImpl() throws RemoteException {

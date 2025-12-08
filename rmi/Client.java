@@ -52,9 +52,13 @@ public class Client {
                                 {2, 5, 1, 18}
                         };
 
-                        System.out.println("Wyniki dla testowej macierzy:");
+                        System.out.println("Wyniki dla testowej macierzy równolegle:");
                         double[][] solution = gauss.gaussianEliminationProcess(testMatrix);
                         MatrixUtils.printGaussSolutions(solution);
+
+                        System.out.println("Wyniki dla testowej macierzy szeregowo:");
+                        double[][] solution2 = gauss.gaussianElimination(testMatrix);
+                        MatrixUtils.printGaussSolutions(solution2);
                         break;
                     case 'q':
                     case 'Q':
