@@ -3,6 +3,7 @@
 #include <vector>
 #include <cmath>
 #include <chrono>
+#include <ctime>
 #include "gauss_process.h"
 using namespace std;
 
@@ -138,8 +139,11 @@ void terminateWorkers()
 // ===========================
 vector<vector<double>> gaussianElimination_p(vector<vector<double>> mat)
 {
-    // Zainicjuj workerów tylko raz
     initializeWorkers();
+
+    // ---- CPU time start ----
+    clock_t cpu_start = clock();
+    // -------------------------
 
     auto start = chrono::high_resolution_clock::now();
 
@@ -148,8 +152,14 @@ vector<vector<double>> gaussianElimination_p(vector<vector<double>> mat)
     auto end = chrono::high_resolution_clock::now();
     chrono::duration<double> elapsed = end - start;
 
+    // ---- CPU time end ----
+    clock_t cpu_end = clock();
+    double cpu_time = double(cpu_end - cpu_start) / CLOCKS_PER_SEC;
+    // -------------------------
+
     cout << "MPI równolegle:" << endl;
     cout << "Czas (wall): " << elapsed.count() << " s\n";
+    cout << "Czas CPU: " << cpu_time << " s\n";
 
     return mat;
 }
