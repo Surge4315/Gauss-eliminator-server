@@ -5,7 +5,7 @@ import java.net.*;
 
 public class GaussImpl extends UnicastRemoteObject implements Gauss {
 
-    private static final int NUM_PROCS = 1;
+    private static final int NUM_PROCS = 4;
     private static final int BASE_PORT = 5000;
 
     public GaussImpl() throws RemoteException {
@@ -102,9 +102,9 @@ public class GaussImpl extends UnicastRemoteObject implements Gauss {
 
     @Override
     public double[][] gaussianEliminationProcess(double[][] mat) throws RemoteException {
-        int N = mat. length;
+        int N = mat.length;
 
-        System.out.println("\nrozmiar: " + mat.length);
+        System.out.println("\nrozmiar: " + N);
         long startWall = System.nanoTime();
         long startCpu = System.nanoTime();  // uproszczenie — w Javie dokładny CPU time wymaga MXBean
 
@@ -136,6 +136,11 @@ public class GaussImpl extends UnicastRemoteObject implements Gauss {
                 ServerSocket[] servers = new ServerSocket[NUM_PROCS];
                 Process[] procs = new Process[NUM_PROCS];
 
+                // Tablice do komunikacji (wypełnione później)
+                Socket[] sockets = new Socket[NUM_PROCS];
+                ObjectOutputStream[] outs = new ObjectOutputStream[NUM_PROCS];
+                ObjectInputStream[] ins = new ObjectInputStream[NUM_PROCS];
+
                 // Najpierw utwórz wszystkie ServerSockety
                 for (int p = 0; p < NUM_PROCS; p++) {
                     int start = k + 1 + p * rowsPerProc;
@@ -145,7 +150,8 @@ public class GaussImpl extends UnicastRemoteObject implements Gauss {
                     try {
                         servers[p] = new ServerSocket(BASE_PORT + p);
                     } catch (IOException e) {
-                        System.err. println("Nie udało się utworzyć ServerSocket na porcie " + (BASE_PORT + p));
+                        System.err.println("Nie udało się utworzyć ServerSocket na porcie " + (BASE_PORT + p) + ": " + e.getMessage());
+                        servers[p] = null;
                     }
                 }
 
@@ -156,59 +162,115 @@ public class GaussImpl extends UnicastRemoteObject implements Gauss {
                     if (start >= end || servers[p] == null) continue;
 
                     try {
-                        //absolute path without which everything shits itself
                         String classpath = System.getProperty("java.class.path");
                         ProcessBuilder pb = new ProcessBuilder("java", "-cp", classpath, "GaussWorker",
                                 String.valueOf(k), String.valueOf(start), String.valueOf(end),
                                 String.valueOf(BASE_PORT + p));
-                        pb. inheritIO();
-                        procs[p] = pb. start();
+                        pb.inheritIO();
+                        procs[p] = pb.start();
                     } catch (IOException e) {
-                        System. err.println("Nie udało się uruchomić procesu GaussWorker: " + e. getMessage());
+                        System.err.println("Nie udało się uruchomić procesu GaussWorker: " + e.getMessage());
+                        procs[p] = null;
                     }
                 }
 
-                // Komunikacja z workerami
+                // --- ETAP A: AKCEPTUJ WSZYSTKIE POŁĄCZENIA (nie blokujemy wysyłania/odbierania sekwencyjnie) ---
                 for (int p = 0; p < NUM_PROCS; p++) {
                     int start = k + 1 + p * rowsPerProc;
                     int end = Math.min(N, start + rowsPerProc);
                     if (start >= end || servers[p] == null) continue;
 
-                    try (Socket socket = servers[p].accept();
-                         ObjectOutputStream out = new ObjectOutputStream(socket. getOutputStream());
-                         ObjectInputStream in = new ObjectInputStream(socket. getInputStream())) {
-
-                        // Wyślij wiersz pivot
-                        out.writeObject(mat[k]);
-                        out.flush();
-
-                        // Wyślij wiersze do przetworzenia
-                        for (int i = start; i < end; i++) {
-                            out.writeObject(mat[i]);
-                            out.flush();
-                        }
-
-                        // Odbierz zaktualizowane wiersze
-                        for (int i = start; i < end; i++) {
-                            try {
-                                double[] updatedRow = (double[]) in.readObject();
-                                mat[i] = updatedRow;
-                            } catch (ClassNotFoundException e) {
-                                System. err.println("Błąd odczytu wiersza od workera: " + e.getMessage());
-                            }
-                        }
+                    try {
+                        sockets[p] = servers[p].accept();
+                        // Najpierw utwórz ObjectOutputStream, potem ObjectInputStream (zgodnie z konwencją)
+                        outs[p] = new ObjectOutputStream(sockets[p].getOutputStream());
+                        outs[p].flush();
+                        ins[p] = new ObjectInputStream(sockets[p].getInputStream());
                     } catch (IOException e) {
-                        System.err. println("Błąd komunikacji z workerem na porcie " + (BASE_PORT + p) + ": " + e.getMessage());
-                    } finally {
-                        try {
-                            servers[p].close();
-                        } catch (IOException e) {
-                            System.err.println("Błąd zamykania ServerSocket: " + e.getMessage());
+                        System.err.println("Błąd accept() / streamów na porcie " + (BASE_PORT + p) + ": " + e.getMessage());
+                        // spróbuj posprzątać ten gniazdo jeśli zostało otwarte
+                        if (sockets[p] != null) {
+                            try {
+                                sockets[p].close();
+                            } catch (IOException ignored) {
+                            }
+                            sockets[p] = null;
                         }
                     }
                 }
 
-                // Czekamy na zakończenie wszystkich procesów
+                // --- ETAP B: WYŚLIJ DANE DO WSZYSTKICH WORKERÓW ---
+                for (int p = 0; p < NUM_PROCS; p++) {
+                    int start = k + 1 + p * rowsPerProc;
+                    int end = Math.min(N, start + rowsPerProc);
+                    if (start >= end || outs[p] == null) continue;
+
+                    try {
+                        // Wyślij pivot
+                        outs[p].writeObject(mat[k]);
+                        outs[p].flush();
+
+                        // Wyślij wiersze do przetworzenia
+                        for (int i = start; i < end; i++) {
+                            outs[p].writeObject(mat[i]);
+                            outs[p].flush();
+                        }
+                    } catch (IOException e) {
+                        System.err.println("Błąd wysyłania danych do workera " + p + " na porcie " + (BASE_PORT + p) + ": " + e.getMessage());
+                        // Nie zamykamy tu całego procesu — sprzątamy później
+                    }
+                }
+
+                // --- ETAP C: ODBIERZ WYNIKI OD WSZYSTKICH WORKERÓW ---
+                for (int p = 0; p < NUM_PROCS; p++) {
+                    int start = k + 1 + p * rowsPerProc;
+                    int end = Math.min(N, start + rowsPerProc);
+                    if (start >= end || ins[p] == null) continue;
+
+                    try {
+                        for (int i = start; i < end; i++) {
+                            double[] updatedRow = (double[]) ins[p].readObject();
+                            mat[i] = updatedRow;
+                        }
+                    } catch (IOException | ClassNotFoundException e) {
+                        System.err.println("Błąd odbierania danych od workera " + p + " na porcie " + (BASE_PORT + p) + ": " + e.getMessage());
+                    }
+                }
+
+                // --- SPRZĄTANIE: zamknij strumienie, sockety i serwery ---
+                for (int p = 0; p < NUM_PROCS; p++) {
+                    try {
+                        if (ins[p] != null) {
+                            ins[p].close();
+                            ins[p] = null;
+                        }
+                    } catch (IOException ignored) {
+                    }
+                    try {
+                        if (outs[p] != null) {
+                            outs[p].close();
+                            outs[p] = null;
+                        }
+                    } catch (IOException ignored) {
+                    }
+                    try {
+                        if (sockets[p] != null) {
+                            sockets[p].close();
+                            sockets[p] = null;
+                        }
+                    } catch (IOException ignored) {
+                    }
+                    try {
+                        if (servers[p] != null) {
+                            servers[p].close();
+                            servers[p] = null;
+                        }
+                    } catch (IOException e) {
+                        System.err.println("Błąd zamykania ServerSocket dla p=" + p + ": " + e.getMessage());
+                    }
+                }
+
+                // Czekamy na zakończenie wszystkich procesów worker
                 for (Process p : procs) {
                     if (p != null) {
                         try {
@@ -236,13 +298,9 @@ public class GaussImpl extends UnicastRemoteObject implements Gauss {
             double wallSeconds = (endWall - startWall) / 1e9;
             double cpuSeconds = (endCpu - startCpu) / 1e9;
 
-            System.out. println("procesy:");
-            System.out. println("Czas zegarowy (wall): " + wallSeconds + " s");
+            System.out.println("procesy:");
+            System.out.println("Czas zegarowy (wall): " + wallSeconds + " s");
             System.out.println("Czas CPU: " + cpuSeconds + " s");
-
-            //System.out.println("\nRozwiązanie układu:");
-            //for (int i = 0; i < N; i++)
-            //   System.out.printf("x%d = %.6f\n", i + 1, x[i]);
 
         } catch (Exception e) {
             System.err.println("Wystąpił błąd w gaussianEliminationProcess: " + e.getMessage());
@@ -252,5 +310,6 @@ public class GaussImpl extends UnicastRemoteObject implements Gauss {
         return mat;
     }
 }
+
 
 
